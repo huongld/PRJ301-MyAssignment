@@ -2,6 +2,7 @@ package dal;
 
 import model.Request;
 import model.User;
+import java.sql.Connection; // Đảm bảo đã import
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,8 +15,17 @@ import java.util.logging.Logger;
 
 public class RequestDAO extends DBContext {
 
-    // Dùng chung UserDAO để lấy thông tin người tạo/duyệt
-    private final UserDAO userDAO = new UserDAO();
+    // ===== PHẦN SỬA ĐỂ CHIA SẺ CONNECTION =====
+    private final UserDAO userDAO; // Chỉ khai báo
+
+    // Constructor của RequestDAO
+    public RequestDAO() {
+        super(); // 1. Mở connection cho RequestDAO
+        
+        // 2. Khởi tạo UserDAO và "chia sẻ" connection này cho nó
+        this.userDAO = new UserDAO(this.connection); 
+    }
+    // ==========================================
 
     /**
      * Tạo một đơn nghỉ phép mới.
@@ -28,7 +38,10 @@ public class RequestDAO extends DBContext {
             stm.setString(2, req.getReason());
             stm.setDate(3, req.getFromDate());
             stm.setDate(4, req.getToDate());
-            stm.setInt(5, req.getCreatedBy().getUserID()); // Chú ý: Đã sửa lại
+            
+            // Lấy ID từ đối tượng User
+            stm.setInt(5, req.getCreatedBy().getUserID()); 
+            
             stm.executeUpdate();
         } catch (SQLException e) {
             Logger.getLogger(RequestDAO.class.getName()).log(Level.SEVERE, null, e);
@@ -44,7 +57,8 @@ public class RequestDAO extends DBContext {
         String sql = "SELECT r.* "
                    + "FROM [Request] r "
                    + "JOIN [User] u ON r.CreatedBy = u.UserID "
-                   + "WHERE r.CreatedBy = ? OR u.ManagerID = ? " // Đơn của mình HOẶC đơn của cấp dưới
+                   + "WHERE (r.CreatedBy = ? OR u.ManagerID = ?) " // Đơn của mình HOẶC đơn của cấp dưới
+                   + "AND u.IsActive = 1 " // Chỉ lấy đơn của user còn hoạt động
                    + "ORDER BY r.CreatedDate DESC";
         
         try (PreparedStatement stm = connection.prepareStatement(sql)) {
@@ -102,17 +116,14 @@ public class RequestDAO extends DBContext {
      */
     public List<Request> getApprovedRequestsByDivision(int divisionID, Date fromDate, Date toDate) {
         List<Request> list = new ArrayList<>();
-        // Truy vấn này phức tạp:
-        // 1. Join [Request] với [User] để lấy DivisionID
-        // 2. Chỉ lấy đơn Status = 2 (Approved)
-        // 3. Lọc theo khoảng thời gian (phải giao nhau)
         String sql = "SELECT r.* "
                    + "FROM [Request] r "
                    + "JOIN [User] u ON r.CreatedBy = u.UserID "
                    + "WHERE u.DivisionID = ? "
+                   + "AND u.IsActive = 1 " // Chỉ lấy user còn hoạt động
                    + "AND r.Status = 2 " // Chỉ lấy đơn Approved
-                   + "AND r.FromDate <= ? " // Đơn có ngày bắt đầu <= ngày kết thúc của Agenda
-                   + "AND r.ToDate >= ? ";  // Đơn có ngày kết thúc >= ngày bắt đầu của Agenda
+                   + "AND r.FromDate <= ? " 
+                   + "AND r.ToDate >= ? ";
         
         try (PreparedStatement stm = connection.prepareStatement(sql)) {
             stm.setInt(1, divisionID);
@@ -145,11 +156,10 @@ public class RequestDAO extends DBContext {
         req.setProcessedDate(rs.getTimestamp("ProcessedDate"));
         req.setProcessedComment(rs.getString("ProcessedComment"));
 
-        // Lấy thông tin người tạo
+        // UserDAO bây giờ đã được chia sẻ connection nên sẽ chạy đúng
         int createdByID = rs.getInt("CreatedBy");
         req.setCreatedBy(userDAO.getUserByID(createdByID));
 
-        // Lấy thông tin người duyệt (có thể là NULL)
         int processedByID = rs.getInt("ProcessedBy");
         if (!rs.wasNull()) {
             req.setProcessedBy(userDAO.getUserByID(processedByID));

@@ -18,7 +18,7 @@ public class DBContext {
     // Khai báo là 'static' để hàm main có thể truy cập được
     private static final String host = "LAPTOP-EBK847C3";
     private static final String port = "1433";
-    private static final String dbName = "FALL_Asignment";
+    private static final String dbName = "FALL25_Assignment"; 
     private static final String user = "sa";
     private static final String pass = "123";
 
